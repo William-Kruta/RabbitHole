@@ -1,0 +1,39 @@
+[
+  {
+    "name": "search_google",
+    "description": "Search the web based on a query and get a list of relevant urls.",
+    "func_name": "search_google",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The search query to look up"
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Maximum number of results to return",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "fetch_page_content",
+    "description": "Get the content of a web page.",
+    "func_name": "fetch_page_content",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The url to fetch content from."
+        }
+      },
+      "required": ["url"]
+    }
+  }
+]

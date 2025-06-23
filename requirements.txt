@@ -1,0 +1,7 @@
+
+# Web 
+beautifulsoup4
+googlesearch-python
+requests
+
+ollama

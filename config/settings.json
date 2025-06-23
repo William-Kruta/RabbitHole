@@ -1,0 +1,25 @@
+{
+    "recursion_depth": "1",
+    "model": {
+        "analyst": {
+            "context_window": 7000,
+            "model_name": "qwen3:0.6b"
+        },
+        "critic": {
+            "context_window": 4096,
+            "model_name": "qwen3:0.6b"
+        },
+        "explorer": {
+            "context_window": 4096,
+            "model_name": "qwen3:0.6b"
+        },
+        "synthesizer": {
+            "context_window": 4096,
+            "model_name": "qwen3:0.6b"
+        },
+        "web_searcher": {
+            "context_window": 4096,
+            "model_name": "qwen3:0.6b"
+        }
+    }
+}

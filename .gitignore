@@ -1,0 +1,9 @@
+venv
+.env
+
+
+config/__pycache__
+modules/gui/__pycache__
+modules/gui/pages/__pycache__
+modules/research/__pycache__
+modules/utils/__pycache__

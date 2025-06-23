@@ -1,0 +1,27 @@
+{
+  "analyst": {
+    "model": "mannix/llama3.1-8b-abliterated:q4_0",
+    "context_window": 10000
+  },
+  "critic": {
+    "model": "mannix/llama3.1-8b-abliterated:q4_0",
+    "context_window": 10000
+  },
+  "explorer": {
+    "model": "mannix/llama3.1-8b-abliterated:q4_0",
+    "context_window": 10000
+  },
+  "summarizer": {
+    "model": "mannix/llama3.1-8b-abliterated:q4_0",
+    "context_window": 10000
+  },
+  "synthesizer": {
+    "model": "mannix/llama3.1-8b-abliterated:q4_0",
+    "context_window": 10000
+  },
+  "web_searcher": {
+    "model": "mannix/llama3.1-8b-abliterated:q4_0",
+    "context_window": 10000
+  },
+  "research_output": "output"
+}
