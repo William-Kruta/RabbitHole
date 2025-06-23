@@ -79,7 +79,8 @@ class ResearchPage(ctk.CTkFrame):
 
     def _load_gif(self):
         """Loads GIF frames into a list."""
-        choice = random.choice(GIFS)
+        choice = GIFS[0]
+        # random.choice(GIFS)
         print(f"CHOICE: {choice}")
         try:
             # Assumes a 'loading.gif' file in the same directory

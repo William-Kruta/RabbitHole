@@ -1,5 +1,5 @@
 {
-    "recursion_depth": "1",
+    "recursion_depth": "3",
     "model": {
         "analyst": {
             "context_window": 7000,

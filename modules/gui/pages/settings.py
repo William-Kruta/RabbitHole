@@ -74,6 +74,10 @@ class SettingsPage(ctk.CTkFrame):
         )
         save_btn.grid(row=len(agents) + 3, column=0, columnspan=3, pady=(20, 10))
 
+        ctk.CTkLabel(
+            self, text="Created by: William Kruta", font=ctk.CTkFont(weight="bold")
+        ).grid(row=len(agents) + 10, column=0, columnspan=3, padx=10)
+
         # Center the grid layout in the frame
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
