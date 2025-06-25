@@ -22,7 +22,7 @@ class App(ctk.CTk):
         # --- Configure the main window ---
         self.iconbitmap(ICON_PATH)
         self.title("Rabbit Hole")
-        self.geometry("600x550")
+        self.geometry("1280x720")
 
         self.settings = read_settings()
 

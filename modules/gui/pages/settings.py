@@ -40,7 +40,14 @@ class SettingsPage(ctk.CTkFrame):
         )
 
         # --- Context window and model settings for each agent ---
-        agents = ["analyst", "critic", "explorer", "synthesizer", "web_searcher"]
+        agents = [
+            "analyst",
+            "critic",
+            "explorer",
+            "synthesizer",
+            "web_searcher",
+            "chat",
+        ]
         for idx, agent in enumerate(agents, start=3):
             # Agent Name Label
             ctk.CTkLabel(self, text=f"{agent.capitalize()}").grid(

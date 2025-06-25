@@ -20,6 +20,10 @@
         "web_searcher": {
             "context_window": 4096,
             "model_name": "qwen3:0.6b"
+        },
+        "chat": {
+            "context_window": 4096,
+            "model_name": "qwen3:0.6b"
         }
     }
 }

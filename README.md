@@ -16,8 +16,6 @@
 
 **5**. Run the program with `python gui.py`
 
-What is the best IPO to invest in?
-
 ### Research
 
 When researching a topic, you will be aided by 4 agents.
@@ -31,7 +29,7 @@ The research flow is as follows:
 
 `Web Data -> Analyst -> Critic -> Synthesizer -> Explorer -> Web Data -> Repeat`
 
-###### Below are some examples
+#### Below are some examples
 
 **_Note_**: Clips were sped up to fit in gif format.
 

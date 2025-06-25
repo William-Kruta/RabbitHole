@@ -5,8 +5,10 @@ import customtkinter as ctk
 from PIL import Image, ImageSequence
 import queue
 import random
-from modules.research.researchv2 import DeepResearch
+from modules.research.research import DeepResearch
+from modules.research.llm import LLM
 from config.config import read_settings
+
 
 GIF_PATH = os.path.join("assets", "loading_2.gif")
 
@@ -30,14 +32,21 @@ class ResearchPage(ctk.CTkFrame):
 
     def __init__(self, parent, controller):
         super().__init__(parent, fg_color="black")
+        settings = read_settings()
         self.controller = controller
         # --- Setup Queue for thread-safe GUI updates ---
         self.update_queue = queue.Queue()
         # Instantiate the research class, passing it our update method as a callback
         self.deep_research = DeepResearch(status_callback=self.queue_status_update)
+        self.chat_model_name = settings["model"]["chat"]["model_name"]
+        self.chat_context_window = settings["model"]["chat"]["context_window"]
+        self.chat_agent = LLM(
+            self.chat_model_name,
+            system_prompt="You are a chat agent. Help the user with questions no matter the topic.",
+        )
 
         # Configure a 2-column grid. Column 0 for text, Column 1 for GIF.
-        self.grid_columnconfigure(0, weight=2)  # Status box gets more space
+        self.grid_columnconfigure(0, weight=1)  # Status box gets more space
         self.grid_columnconfigure(1, weight=1)  # GIF gets less space
 
         # Title Label
@@ -46,18 +55,44 @@ class ResearchPage(ctk.CTkFrame):
         )
         self.title_label.grid(row=0, column=0, columnspan=2, padx=20, pady=20)
 
-        # Status Box (now in column 0)
-        self.status_box = ctk.CTkTextbox(self, height=300, font=ctk.CTkFont(size=14))
-        self.status_box.grid(row=1, column=0, padx=(20, 10), pady=10, sticky="nsew")
+        # Status Box
+        self.status_box = ctk.CTkTextbox(
+            self, width=50, height=300, font=ctk.CTkFont(size=14)
+        )
+        self.status_box.grid(row=2, column=0, padx=(20, 10), pady=10, sticky="nsew")
         self.status_box.configure(state="disabled")
+        # Chat Interface
+        self.chat_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.chat_frame.grid(row=2, column=1, padx=(10, 20), pady=10, sticky="nsew")
+        self.chat_frame.grid_rowconfigure(0, weight=1)
+        self.chat_frame.grid_columnconfigure(0, weight=1)
 
-        # GIF Label (in column 1)
+        # Chat history
+        self.chat_history = ctk.CTkScrollableFrame(self.chat_frame, fg_color="gray17")
+        self.chat_history.grid(row=0, column=0, sticky="nsew")
+
+        # User Input
+        # User input area
+        input_frame = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
+        input_frame.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        input_frame.grid_columnconfigure(0, weight=1)
+
+        self.user_entry = ctk.CTkEntry(
+            input_frame, placeholder_text="Ask a follow-up question..."
+        )
+        self.user_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        self.user_entry.bind("<Return>", self._send_user_message)
+        send_button = ctk.CTkButton(
+            input_frame, text="Send", width=70, command=self._send_user_message
+        )
+        send_button.grid(row=0, column=1)
+        # GIF Label
         self.gif_label = ctk.CTkLabel(self, text="")
-        self.gif_label.grid(row=1, column=1, padx=(10, 20), pady=10, sticky="nsew")
+        self.gif_label.grid(row=4, column=0, padx=(10, 20), pady=10, sticky="nsew")
 
         self.progress_bar = ctk.CTkProgressBar(self, orientation="horizontal")
         self.progress_bar.grid(
-            row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew"
+            row=3, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew"
         )
         self.progress_bar.set(0)
 
@@ -65,11 +100,11 @@ class ResearchPage(ctk.CTkFrame):
         self.back_button = ctk.CTkButton(
             self, text="New Research", command=self._stop_and_go_back
         )
-        self.back_button.grid(row=4, column=0, columnspan=2, padx=20, pady=20)
+        self.back_button.grid(row=1, column=0, columnspan=2, padx=20, pady=20)
         self.download_button = ctk.CTkButton(
             self, text="Download Report", command=self._save_report
         )
-        self.download_button.grid(row=5, column=0, columnspan=2, padx=20, pady=20)
+        self.download_button.grid(row=1, column=1, columnspan=2, padx=20, pady=20)
         # self.download_button.grid_remove()
         # --- GIF Animation Attributes ---
         self.gif_frames = []
@@ -172,6 +207,52 @@ class ResearchPage(ctk.CTkFrame):
             # Schedule itself to run again
             self.after(100, self._process_queue)
 
+    def _add_chat_bubble(self, message, sender):
+        """Adds a new message bubble to the chat history."""
+        if sender == "user":
+            bubble = ctk.CTkLabel(
+                self.chat_history,
+                text=message,
+                fg_color="#007AFF",
+                text_color="white",
+                corner_radius=15,
+                wraplength=250,
+                justify="left",
+                anchor="w",
+            )
+            bubble.pack(anchor="e", padx=10, pady=5)
+        else:  # assistant
+            bubble = ctk.CTkLabel(
+                self.chat_history,
+                text=message,
+                fg_color="#E5E5EA",
+                text_color="black",
+                corner_radius=15,
+                wraplength=250,
+                justify="left",
+                anchor="w",
+            )
+            bubble.pack(anchor="w", padx=10, pady=5)
+
+        # Auto-scroll to the bottom
+        self.after(100, self.chat_history._parent_canvas.yview_moveto, 1.0)
+
+    def _send_user_message(self, event=None):
+        """Handles sending a message from the user entry."""
+        user_message = self.user_entry.get()
+        if not user_message.strip():
+            return
+
+        self._add_chat_bubble(user_message, "user")
+        self.user_entry.delete(0, "end")
+
+        chat_response = self.chat_agent.get_response(
+            user_message, self.chat_context_window
+        )
+        self._add_chat_bubble(chat_response, "assistant")
+
+        # self.after(500, self._add_chat_bubble, chat_response, "assistant")
+
     def start_new_research(self, query):
         """Resets the page and starts the research process in a new thread."""
         settings = read_settings()
@@ -180,7 +261,6 @@ class ResearchPage(ctk.CTkFrame):
         self.status_box.configure(state="normal")
         self.status_box.delete("1.0", "end")
         self.status_box.configure(state="disabled")
-
         self._stop_animation()
         self._animate_gif(0)
 

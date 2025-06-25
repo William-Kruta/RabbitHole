@@ -4,7 +4,7 @@ from PIL import Image
 
 LOGO = os.path.join("assets", "rabbit_thumbnail_2.png")
 
-dimensions = {"logo": (350, 350)}
+dimensions = {"logo": (500, 500)}
 
 
 class StartPage(ctk.CTkFrame):
@@ -47,8 +47,8 @@ class StartPage(ctk.CTkFrame):
         entry = ctk.CTkEntry(
             search_frame,
             textvariable=self.search_var,
-            width=300,
-            font=ctk.CTkFont(size=14),
+            width=400,
+            font=ctk.CTkFont(size=18),
             placeholder_text="Enter your research topic...",
         )
         entry.grid(row=0, column=0, padx=(0, 10), ipady=5)

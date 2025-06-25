@@ -1,261 +1,209 @@
-import os
-import json
+import re
 import time
-import logging
-import requests
-
-
-from modules.research.tools import (
-    clean_text,
-    clean_multiple_texts,
-    fetch_page_content,
-    recommend_web_sources,
-    refine_prompt_for_web,
-    search_google,
-)
+from typing import List, Tuple
+import datetime as dt
+from config.config import read_settings
+from modules.research.actions import analyze, critisize, next_step, synthesize
 from modules.research.agents import (
     AnalystAgent,
     CriticAgent,
     ExplorerAgent,
     SynthesizerAgent,
-    WebSearcher,
 )
 
-from config.config import get_research_output_path
-
-# logging.basicConfig(
-#     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-# )
-# logger = logging.getLogger("ollama")  # Or the specific module within 'ollama'
-
-# # Set the logging level to WARNING or higher
-# logger.setLevel(logging.WARNING)
-# logger = logging.getLogger("requests")  # Or the specific module within 'ollama'
-
-# # Set the logging level to WARNING or higher
-# logger.setLevel(logging.WARNING)
+from modules.research.tools import (
+    search_google,
+    fetch_page_content,
+    clean_multiple_texts,
+)
 
 
 class DeepResearch:
-    def __init__(self, research_config: dict, show_progress: bool = True):
-        self.config = research_config
-        self.analyst = AnalystAgent(self.config["analyst"]["model"])
-        self.critic = CriticAgent(self.config["critic"]["model"])
-        self.explorer = ExplorerAgent(self.config["explorer"]["model"])
-        self.synthesizer = SynthesizerAgent(self.config["synthesizer"]["model"])
-        self.web_searcher = WebSearcher(self.config["web_searcher"]["model"])
-        self.current_depth = 0
-        self.show_progress = show_progress
-        self.history = []
-        self.short_term_memory = []
-        self.long_term_memory = []
-
-    def run_research(self, topic: str, recursion_depth: int = 3):
-        """Public-facing method to start the recursive research process."""
-        print(
-            f"--- Starting Recursive Research for topic: '{topic}' with depth: {recursion_depth} ---"
+    def __init__(self, status_callback=None):
+        self.settings = read_settings()
+        self.analyst = AnalystAgent(self.settings["model"]["analyst"]["model_name"])
+        self.critic = CriticAgent(self.settings["model"]["critic"]["model_name"])
+        self.explorer = ExplorerAgent(self.settings["model"]["explorer"]["model_name"])
+        self.synthesizer = SynthesizerAgent(
+            self.settings["model"]["synthesizer"]["model_name"]
         )
-        self.origin_topic = topic
-        connected = self.analyst.model.check_connection()
-        print(f"Connected: {connected}")
+        self.step_str = ""
+        self.report = ""
+        self.all_research = []
+        self.status_callback = status_callback
+        self.user_feedback = None
 
-        if not connected:
-            raise requests.ConnectionError
+    def set_user_feedback(self, feedback):
+        """Stores feedback from the user to influence the next step."""
+        self.user_feedback = feedback
 
-        research_results = self._recursive_step(
-            current_topic=topic,
-            recursion_depth=recursion_depth,
-            research_history=[],
-        )
-        path = "output\\{}.json"
-        file_name = self._create_file_name(topic, self.explorer)
-        file_name = self.generate_unique_filename(file_name)
-        self._save_research(research_results, path.format(file_name))
+    def set_step_str(self, text: str, current_step: int, max_steps: int):
+        """Sets the step string and calls the callback to update the GUI."""
+        self.step_str = text
+        if self.status_callback:
+            self.status_callback((text, current_step, max_steps))
 
-    def _save_research(self, research_results: list, path: str):
-        print("Saving results to JSON...")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(research_results, f, ensure_ascii=False, indent=4)
-        print("Saved to {}".format(path))
-
-    def _create_file_name(self, topic: str, agent):
-        output_dir = get_research_output_path()
-        files = os.listdir(output_dir)
-
-        prompt = f"""Based on this topic: '{topic}', create a file name. Respond with nothing but the file name. Avoid spaces, use '_' instead. DO NOT include file extensions. For reference here are the current files: {files}. Do not repeat file names, but they can be similar. """
-        response = agent.model.get_response(prompt)
-        return response
-
-    def _recursive_step(
-        self,
-        current_topic: str,
-        recursion_depth: int,
-        research_history: list,
+    def start_research(
+        self, topic: str, research_iterations: int = 3, web_iterations: int = 5
     ):
-        label = self.current_depth + 1
-        if self.current_depth >= recursion_depth:
-            print(
-                "--- Reached maximum recursion depth. Returning research history. ---"
+        self.origin_topic = topic
+        self.current_topic = topic
+        index = 0
+        current_step = 0
+        num_operations = 5  # web, analyze, critisize, synthesize, explore
+        max_steps = research_iterations * num_operations
+        for i in range(research_iterations):
+            start = time.time()
+            current_step += 1
+            index_str = index + 1
+            self.set_step_str(
+                f"====================\n[{index_str}.0] Topic: {self.current_topic}",
+                current_step,
+                max_steps,
             )
-            return research_history
-
-        start = time.time()
-        print("================================\n")
-        if self.show_progress:
-            print(f"[{label}.1] Current Topic: {current_topic}")
-        # sources = recommend_web_sources(current_topic, self.explorer)
-
-        web_query = refine_prompt_for_web(current_topic, self.web_searcher)
-        urls = search_google(web_query)
-        web_content = []
-        sources = []
-        for u in urls:
-            content = fetch_page_content(u)
-            content = clean_text(content)
-            if content != "":
-                sources.append(u)
-                web_content.append(content)
-        ### Analysis
-        if self.show_progress:
-            print(f"[{label}.2] Analyzing content...")
-        if self.current_depth > 0:
-            current_topic = (
-                f"Origin Topic: {self.origin_topic} | Current Topic: {current_topic}"
+            self.set_step_str(
+                f"[{index_str}.1] Searching the web...",
+                current_step,
+                max_steps,
             )
+            refined_web_prompt = self.refine_query_for_web(self.current_topic)
+            urls = search_google(refined_web_prompt, num_results=web_iterations)
+            content = []
+            for u in urls:
+                c = fetch_page_content(u)
+                content.append(c)
 
-        analysis = self._analyze(
-            current_topic,
-            web_content,
-            self.analyst,
-            self.config["analyst"]["context_window"],
-        )
-        ### Criticism
-        if self.show_progress:
-            print(f"[{label}.3] Critisizing analysis...")
-        if self.current_depth > 0:
-            analysis = (
-                f"Origin Topic: {self.origin_topic} | Current Analysis: {analysis}"
+            content = clean_multiple_texts(content)
+            content = "\n".join(content)
+            # Analysis
+            current_step += 1
+            self.set_step_str(
+                f"[{index_str}.2] Analyzing data...", current_step, max_steps
             )
-        criticism = self._critisize(
-            analysis, web_content, self.critic, self.config["critic"]["context_window"]
+            analysis = analyze(
+                self.current_topic,
+                content,
+                self.analyst,
+                self.settings["model"]["analyst"]["context_window"],
+            )
+            # Critisize
+            current_step += 1
+            self.set_step_str(
+                f"[{index_str}.3] Critisizing analysis...", current_step, max_steps
+            )
+            criticism = critisize(
+                analysis,
+                content,
+                self.critic,
+                self.settings["model"]["critic"]["context_window"],
+            )
+            # Synthesize
+            current_step += 1
+            self.set_step_str(
+                f"[{index_str}.4] Synthesizing responses...", current_step, max_steps
+            )
+            synthesis = synthesize(
+                analysis,
+                criticism,
+                self.synthesizer,
+                self.settings["model"]["synthesizer"]["context_window"],
+            )
+            # Explore
+            current_step += 1
+            self.set_step_str(
+                f"[{index_str}.5] Generating next question...", current_step, max_steps
+            )
+            next_question = next_step(
+                synthesis,
+                self.origin_topic,
+                self.explorer,
+                self.settings["model"]["explorer"]["context_window"],
+            )
+            end = time.time()
+            elapse = end - start
+            r = {
+                "topic": self.current_topic,
+                "web_query": refined_web_prompt,
+                "sources": urls,
+                "analysis": analysis,
+                "criticism": criticism,
+                "synthesis": synthesis,
+                "next_question": next_question,
+                "elapse": elapse,
+            }
+            if self.user_feedback:
+                self.set_step_str(f"Incorporating user feedback: {self.user_feedback}")
+                self.current_topic = (
+                    f"{self.user_feedback} - based on this, explore: {next_question}"
+                )
+                self.user_feedback = None
+            else:
+                self.current_topic = next_question
+
+            index += 1
+
+            self.all_research.append(r)
+
+        self.report = self.generate_report(self.origin_topic, self.analyst)
+        self.set_step_str(
+            f"\nResearch complete for topic: '{self.origin_topic}'!",
+            max_steps,
+            max_steps,
         )
-        ### Synthesize
-        if self.show_progress:
-            print(f"[{label}.4] Synthesizing responses...")
-        synthesized = self._synthesize(
-            analysis,
-            criticism,
-            self.synthesizer,
-            self.config["synthesizer"]["context_window"],
-        )
-        ### Explore
-        if self.show_progress:
-            print(f"[{label}.5] Exploring topic further...")
-        next_step = self._next_step(
-            synthesized, self.explorer, self.config["explorer"]["context_window"]
-        )
-        end = time.time()
-        elapse = end - start
-        research_state = {
-            "depth": self.current_depth,
-            "topic": current_topic,
-            "web_query": web_query,
-            "analysis": analysis,
-            "critique": criticism,
-            "synthesis": synthesized,
-            "sources": sources,
-            "next_question": next_step,
-            "elapse": elapse,
-        }
-        research_history.append(research_state)
-        self.current_depth += 1
-        return self._recursive_step(
-            current_topic=next_step,
-            recursion_depth=recursion_depth,
-            research_history=research_history,
-        )
 
-    def _analyze(self, topic: str, context: list, agent, context_window: int):
-        if self.current_depth > 0:
-            prompt = f"Origin Topic: {self.origin_topic}. Use these web search results to answer this question: {topic}. Here are the results: {context}"
-        else:
-            prompt = f"Use these web search results to answer this question: {topic}. Here are the results: {context}"
+    def get_report(self):
+        return self.report
 
-        response = agent.model.get_response(prompt, context_window=context_window)
-        return response
+    def refine_query_for_web(self, query: str):
+        prompt = f"Take this user's query and refine it to be a web search. Here is the current date if relevant: {dt.datetime.now().date()}\nHere is the user's query: {query}. Return nothing but the refined query. Stick close to the original query. Do not add extra questions."
+        return self.explorer.model.get_response(prompt)
 
-    def _critisize(
-        self, analysis: str, context: list, agent, context_window: int
-    ) -> str:
-        if self.current_depth > 0:
-            prompt = f"""Origin Topic: {self.origin_topic} Critically evaluate the following analysis. Identify any potential biases,
-                        unstated assumptions, or logical fallacies. Is the evidence strong enough
-                        to support the conclusions?
+    def generate_report(self, origin_topic, agent):
 
-                        --- ANALYSIS ---
-                        {analysis}
+        prompt = f"""You are a lead researcher tasked with creating a final, consolidated report from a research log. The log details a multi-step investigation that evolved over several iterations. Your report should synthesize the findings from the *entire* process into a single, comprehensive narrative.
 
-                        --- SOURCES --- 
-                        {context}
-                        """
-        else:
-            prompt = f"""Critically evaluate the following analysis. Identify any potential biases,
-                    unstated assumptions, or logical fallacies. Is the evidence strong enough
-                    to support the conclusions?
+### Final Report Task
 
-                    --- ANALYSIS ---
-                    {analysis}
+**Original Topic of Inquiry:**
+{origin_topic}"""
+        for i in range(len(self.all_research)):
+            new_prompt = f"""**Iteration {i+1}:**
+* **Topic Focus:** {self.all_research[i]['topic']}
+* **Analysis:** {self.all_research[i]['analysis']}
+* **Criticism:** {self.all_research[i]['criticism']}
+* **Synthesized Conclusion for this Step:** {self.all_research[i]['synthesis']}
+* **Next Question Proposed:** {self.all_research[i]['next_question']}"""
+            prompt += new_prompt
 
-                    --- SOURCES --- 
-                    {context}
-                    """
+        final_insturctions = """### Final Instructions
+    Based on the full research log from all iterations, produce a final, detailed report on the original topic: **"{origin_topic}"**. Your report should not just summarize the final step, but should trace the key findings and shifts in understanding that occurred throughout the investigation. Synthesize all the collected information into a definitive, well-structured conclusion."""
+        prompt += final_insturctions
 
-        response = agent.model.get_response(prompt, context_window=context_window)
-        return response
+        report = agent.model.get_response(prompt)
+        return report
 
-    def _synthesize(self, analysis: str, criticism: str, agent, context_window: int):
-        prompt = f"""Create a coherent summary that incorporates the initial analysis and the subsequent critique.
-                    Present a balanced view based on both pieces of information.
-
-                    --- INITIAL ANALYSIS ---
-                    {analysis}
-
-                    --- CRITIQUE ---
-                    {criticism}
-                    """
-        response = agent.model.get_response(prompt, context_window=context_window)
-        return response
-
-    def _next_step(self, synthesis: str, agent, context_window: int) -> str:
-
-        prompt = f"""
-            Based on the following research summary and critique, what are the most
-            important unanswered questions or next steps for a deeper investigation? Determine the most important details and create a question. Respond with only the question you create. 
-
-            --- SUMMARY ---
-            {synthesis}
-            
-            STAY ON TOPIC WITH THE ORIGIN TOPIC: {self.origin_topic}                
-            """
-
-        response = agent.model.get_response(prompt, context_window=context_window)
-        return response
-
-    def generate_unique_filename(self, filename):
+    def split_response_and_thinking(
+        text: str, prefix: str = "<think>"
+    ) -> Tuple[str, List[str]]:
         """
-        Generates a unique filename by appending a counter to the base filename if it already exists.
+        Splits an LLM’s output into:
+        - response: the text with all think-blocks removed
+        - thinking: a list of the contents of each think-block
 
-        Args:
-            filename (str): The base filename.
-
-        Returns:
-            str: A unique filename.
+        A think-block is any chunk starting with `prefix` and running
+        up to the next `prefix` or end-of-string.
         """
-        base, ext = os.path.splitext(filename)
-        counter = 1
+        # escape prefix for regex use
+        marker = re.escape(prefix)
 
-        while os.path.exists(filename):
-            filename = f"{base}_{counter}{ext}"
-            counter += 1
+        # 1) extract all think blocks
+        think_pattern = rf"{marker}\s*(.*?)(?=\s*{marker}|$)"
+        thinking = [
+            blk.strip() for blk in re.findall(think_pattern, text, flags=re.DOTALL)
+        ]
 
-        return filename
+        # 2) remove all think blocks from the original text
+        remove_pattern = rf"{marker}\s*.*?(?=\s*{marker}|$)"
+        response = re.sub(remove_pattern, "", text, flags=re.DOTALL).strip()
+
+        return response, thinking
