@@ -1,4 +1,5 @@
 import logging
+import os
 from modules.research.llm import LLM
 import requests
 import json
@@ -59,7 +60,8 @@ class Agent:
             return f"Error: Tool '{tool_name}' not found."
 
     def load_tool_config(self) -> dict:
-        with open("config\\tools_config.json", "r") as f:
+        config_path = os.path.join("config", "tools_config.json")
+        with open(config_path, "r") as f:
             return json.load(f)
 
     def run(self, prompt: str, max_turns: int = 5) -> str:
